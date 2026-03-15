@@ -469,12 +469,12 @@ class GlyphKitApp:
 		self.titlebar = bar
 
 	def _gear_hover_in(self):
-		is_open = self._settings_win and self._settings_win.winfo_exists()
+		is_open = self._settings_win and hasattr(self._settings_win, "winfo_exists") and self._settings_win.winfo_exists()
 		self.titlebar.itemconfig("gear", fill=C["gold"])
 		self._set_status("Close settings" if is_open else "Open settings")
 
 	def _gear_hover_out(self):
-		is_open = self._settings_win and self._settings_win.winfo_exists()
+		is_open = self._settings_win and hasattr(self._settings_win, "winfo_exists") and self._settings_win.winfo_exists()
 		self.titlebar.itemconfig("gear", fill=C["gold_dim"] if is_open else C["text_dim"])
 		self._set_status(self.status_default)
 
@@ -1395,7 +1395,7 @@ class GlyphKitApp:
 		if self._idle_opacity >= 1.0:
 			return  # No fade when opacity is off
 		# Don't fade while settings flyout is open
-		if self._settings_win and self._settings_win.winfo_exists():
+		if self._settings_win and hasattr(self._settings_win, "winfo_exists") and self._settings_win.winfo_exists():
 			return
 		if self._opacity_timer:
 			self.root.after_cancel(self._opacity_timer)
@@ -1488,7 +1488,7 @@ class GlyphKitApp:
 		self.root.geometry(f"{self.win_w}x{self.win_h}+{x}+{y}")
 
 		# Close settings flyout during drag
-		if self._settings_win and self._settings_win.winfo_exists():
+		if self._settings_win and hasattr(self._settings_win, "winfo_exists") and self._settings_win.winfo_exists():
 			self._close_settings()
 
 	def _apply_window_snap(self, x, y):
@@ -1550,7 +1550,7 @@ class GlyphKitApp:
 	# === Settings Flyout ===
 
 	def _toggle_settings(self):
-		if self._settings_win and self._settings_win.winfo_exists():
+		if self._settings_win and hasattr(self._settings_win, "winfo_exists") and self._settings_win.winfo_exists():
 			self._close_settings()
 		else:
 			self._open_settings()
@@ -1600,7 +1600,7 @@ class GlyphKitApp:
 		win.bind("<Escape>", lambda e: self._close_settings())
 
 	def _close_settings(self):
-		if self._settings_win and self._settings_win.winfo_exists():
+		if self._settings_win and hasattr(self._settings_win, "winfo_exists") and self._settings_win.winfo_exists():
 			self._settings_win.destroy()
 		self._settings_win = None
 		if hasattr(self, "titlebar"):
@@ -1945,46 +1945,37 @@ class GlyphKitApp:
 
 	def _apply_settings(self):
 		"""Apply changed settings and rebuild the UI."""
-		try:
-			# Write pending values into instance vars AND config so both
-			# _save_config and _load_config/_compute_layout see them
-			if hasattr(self, "_pending_scale"):
-				self._user_scale = self._pending_scale
-				self._config["user_scale"] = self._pending_scale
-			if hasattr(self, "_pending_opacity"):
-				self._opacity_key = self._pending_opacity
-				self._config["idle_opacity"] = self._pending_opacity
-			if hasattr(self, "_pending_fade_delay"):
-				self._config["fade_delay"] = self._pending_fade_delay
-			if hasattr(self, "_pending_glyph"):
-				self._glyph_key = self._pending_glyph
-				self._config["glyph_size"] = self._pending_glyph
-			if hasattr(self, "_pending_snap"):
-				self._snap_enabled = self._pending_snap
-				self._config["snap_enabled"] = self._pending_snap
+		# Write pending values into instance vars AND config
+		for attr, cfg_key, inst_attr in [
+			("_pending_scale", "user_scale", "_user_scale"),
+			("_pending_opacity", "idle_opacity", "_opacity_key"),
+			("_pending_glyph", "glyph_size", "_glyph_key"),
+			("_pending_snap", "snap_enabled", "_snap_enabled"),
+		]:
+			if hasattr(self, attr):
+				val = getattr(self, attr)
+				self._config[cfg_key] = val
+				setattr(self, inst_attr, val)
+		if hasattr(self, "_pending_fade_delay"):
+			self._config["fade_delay"] = self._pending_fade_delay
 
-			# Save config first
-			self._save_config()
+		self._save_config()
 
-			# Show restart message briefly, then rebuild
-			self._set_status("Applying settings\u2026", C["teal"])
-			self.root.update()
-
-			# Close settings (skip fade check — we're reopening immediately)
-			if self._settings_win and self._settings_win.winfo_exists():
+		# Close settings window cleanly
+		if self._settings_win and hasattr(self._settings_win, "winfo_exists"):
+			try:
 				self._settings_win.destroy()
-			self._settings_win = True  # Truthy sentinel to suppress fade during rebuild
-			self._rebuild()
-			self._settings_win = None
-			self._show_transient("Settings applied", C["teal"])
-			# Keep at full opacity until settings reopen
-			self.root.attributes("-alpha", 1.0)
-			self._open_settings()
-		except Exception as e:
-			# Surface the error so it's not silently swallowed
-			print(f"Settings apply error: {e}")
-			import traceback
-			traceback.print_exc()
+			except Exception:
+				pass
+		self._settings_win = None
+
+		# Rebuild
+		self._rebuild()
+		self.root.attributes("-alpha", 1.0)
+		self._show_transient("Settings applied", C["teal"])
+
+		# Reopen settings
+		self._open_settings()
 
 	# === Run ===
 
