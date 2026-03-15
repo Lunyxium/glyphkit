@@ -859,7 +859,7 @@ class GlyphKitApp:
 			self._del_btn_frame.destroy()
 
 		self._del_btn_frame = tk.Frame(self.grid_container, bg=C["bg"])
-		self._del_btn_frame.pack(anchor="e", padx=6, pady=(0, 2))
+		self._del_btn_frame.pack(side="bottom", anchor="e", padx=6, pady=(0, 2))
 
 		if self._delete_mode:
 			text = "\u2715  done"
@@ -1013,7 +1013,7 @@ class GlyphKitApp:
 			self._clear_btn_frame.destroy()
 
 		self._clear_btn_frame = tk.Frame(self.grid_container, bg=C["bg"])
-		self._clear_btn_frame.pack(anchor="e", padx=6, pady=(0, 2))
+		self._clear_btn_frame.pack(side="bottom", anchor="e", padx=6, pady=(0, 2))
 
 		if not self._recents:
 			return
