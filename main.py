@@ -1539,7 +1539,7 @@ class GlyphKitApp:
 
 	def _open_settings(self):
 		fw = self.win_w // 2
-		fh = round(self.win_h * 0.80)
+		fh = round(self.win_h * 0.90)
 		main_x = self.root.winfo_x()
 		main_y = self.root.winfo_y()
 
@@ -1556,7 +1556,7 @@ class GlyphKitApp:
 		win = tk.Toplevel(self.root)
 		win.overrideredirect(True)
 		win.attributes("-topmost", True)
-		win.configure(bg=C["gold_dim"])  # Gold horseshoe outline
+		win.configure(bg=C["teal_dim"])  # Teal horseshoe outline
 
 		self._settings_win = win
 		self._settings_dirty = False
