@@ -1,7 +1,6 @@
 <p align="center">
-  <img src="glyphkit.ico" alt="GlyphKit" width="80">
+  <img src="glyphkit.ico" alt="GlyphKit" width="300">
 </p>
-
 <h1 align="center">GlyphKit</h1>
 
 <p align="center">
