@@ -1556,7 +1556,7 @@ class GlyphKitApp:
 		win = tk.Toplevel(self.root)
 		win.overrideredirect(True)
 		win.attributes("-topmost", True)
-		win.configure(bg=C["border"])  # Border color as window bg (horseshoe outline)
+		win.configure(bg=C["gold_dim"])  # Gold horseshoe outline
 
 		self._settings_win = win
 		self._settings_dirty = False
@@ -1564,8 +1564,8 @@ class GlyphKitApp:
 		# Gear highlight (gold)
 		self.titlebar.itemconfig("gear", fill=C["gold_dim"])
 
-		# Horseshoe border: 1px on top, left, right — not bottom (connects to main)
-		border_w = 1
+		# Horseshoe border: 2px on top, left, right — open at bottom
+		border_w = 2
 		inner = tk.Frame(win, bg=C["bg"])
 		inner.pack(fill="both", expand=True, padx=border_w, pady=(border_w, 0))
 
@@ -1744,7 +1744,7 @@ class GlyphKitApp:
 		"""Build a bordered settings box with title and content."""
 		s = self._scale
 		border = tk.Frame(parent, bg=border_color)
-		border.pack(fill="x", pady=(0, round(4 * s)))
+		border.pack(fill="both", expand=True, pady=(0, round(4 * s)))
 
 		inner_frame = tk.Frame(border, bg=bg)
 		inner_frame.pack(fill="x", padx=1, pady=1)
@@ -1776,24 +1776,24 @@ class GlyphKitApp:
 		row = tk.Frame(parent, bg=C["bg"])
 		row.pack(fill="x")
 
-		# Fixed-width label containers so all sliders track the same width
-		label_w = round(28 * s)
+		# Fixed-width label containers — generous for text, track fills the rest
+		label_w = round(38 * s)
 
 		lf = tk.Frame(row, bg=C["bg"], width=label_w, height=round(18 * s))
 		lf.pack(side="left")
 		lf.pack_propagate(False)
 		tk.Label(lf, text=min_text, bg=C["bg"], fg=C["text_dim"],
-			font=font_s, anchor="e").pack(fill="both", expand=True)
+			font=font_s, anchor="center").pack(fill="both", expand=True)
 
 		rf = tk.Frame(row, bg=C["bg"], width=label_w, height=round(18 * s))
 		rf.pack(side="right")
 		rf.pack_propagate(False)
 		tk.Label(rf, text=max_text, bg=C["bg"], fg=C["text_dim"],
-			font=font_s, anchor="w").pack(fill="both", expand=True)
+			font=font_s, anchor="center").pack(fill="both", expand=True)
 
 		track_h = round(20 * s)
 		track = tk.Canvas(row, height=track_h, bg=C["bg"], highlightthickness=0, bd=0, cursor="hand2")
-		track.pack(fill="x", expand=True, padx=round(3 * s))
+		track.pack(fill="x", expand=True, padx=round(2 * s))
 
 		def _draw_slider():
 			track.delete("all")
