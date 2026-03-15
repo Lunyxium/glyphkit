@@ -7,6 +7,7 @@ auto-paste) into whatever window you're working in.
 
 import json
 import os
+import sys
 import tkinter as tk
 import tkinter.font as tkFont
 from characters import CATEGORIES
@@ -19,7 +20,14 @@ from win32_utils import (
 
 # === Config ===
 
-_DIR = os.path.dirname(os.path.abspath(__file__))
+# PyInstaller --onefile extracts to a temp dir; config goes next to the exe,
+# bundled assets (icon) come from the extraction dir
+if getattr(sys, "frozen", False):
+	_DIR = os.path.dirname(sys.executable)
+	_ASSETS = sys._MEIPASS
+else:
+	_DIR = os.path.dirname(os.path.abspath(__file__))
+	_ASSETS = _DIR
 CONFIG_PATH = os.path.join(_DIR, "config.json")
 
 
@@ -32,7 +40,7 @@ C = {
 	"btn":       "#262626",
 	"btn_hover": "#303030",
 	"btn_click": "#0a3530",
-	"border":    "#2a2a2a",
+	"border":    "#333333",
 	"text":      "#d4d4d4",
 	"text_dim":  "#787878",
 	"char":      "#e8e8e8",
@@ -47,20 +55,20 @@ C = {
 	"amber_dim": "#b87830",
 	"purple":    "#b48eff",
 	"purple_dim":"#8a6bc0",
-	"pattern":   "#1c1c1c",
+	"pattern":   "#1f1f1f",
 	"tab":       "#222222",
-	"tab_border": "#2e2e2e",
+	"tab_border": "#363636",
 }
 
 # === App Info ===
 
 APP_INFO = {
 	"name": "GlyphKit",
-	"version": "1.1.0",
-	"author": "Lunyxium",
+	"version": "1.0.0",
+	"author": "Matt B\u00e4umli",
+	"handle": "Lunyxium",
+	"github": "https://github.com/Lunyxium",
 	"year": 2026,
-	"description": "Unicode character palette for Windows 11",
-	"tech": "Python \u00b7 tkinter \u00b7 ctypes \u00b7 zero dependencies",
 	"license": "MIT",
 	"hotkey": "Ctrl + Alt + G",
 }
@@ -75,7 +83,7 @@ SNAP_DIST = 60
 TITLEBAR_H = 36
 STATUS_H = 38
 GRID_ROWS = 3
-IDLE_OPACITY = 0.60
+IDLE_OPACITY = 0.66
 MAX_RECENTS = 24
 
 # Tab rows: grouped by theme. Only categories present in CATEGORIES are shown.
@@ -122,7 +130,7 @@ class TextCanvas(tk.Canvas):
 	def configure(self, **kw):
 		fg = kw.pop("fg", None)
 		kw.pop("font", None)  # Font changes ignored (no resize needed)
-		if fg:
+		if fg is not None:
 			self.set_fg(fg)
 		if kw:
 			super().configure(**kw)
@@ -147,6 +155,8 @@ class GlyphKitApp:
 		self._status_default_color = None
 		self.hover_active = False
 		self._reset_timer = None
+		self._transient_status = None
+		self._transient_color = None
 		self._delete_mode = False
 		self._favorites = []
 		self._recents = []
@@ -164,9 +174,10 @@ class GlyphKitApp:
 		self.root.after(50, self._init_hwnd)
 
 	def _init_hwnd(self):
+		# Opacity first — attributes("-alpha") can reset extended window styles
+		self._setup_opacity()
 		self._hwnd = set_no_activate(self.root)
 		self._setup_hotkey()
-		self._setup_opacity()
 		self.root.bind("<Escape>", self._on_escape)
 
 	@staticmethod
@@ -222,7 +233,7 @@ class GlyphKitApp:
 	def _build(self):
 		r = self.root
 		r.title("GlyphKit")
-		ico = os.path.join(_DIR, "glyphkit.ico")
+		ico = os.path.join(_ASSETS, "glyphkit.ico")
 		if os.path.exists(ico):
 			r.iconbitmap(ico)
 		r.overrideredirect(True)
@@ -230,7 +241,7 @@ class GlyphKitApp:
 		r.attributes("-topmost", True)
 
 		self._build_titlebar()
-		tk.Frame(r, height=1, bg=C["teal_dark"]).pack(fill="x")
+		tk.Frame(r, height=1, bg=C["teal_dim"]).pack(fill="x")
 		self._build_tabs()
 		tk.Frame(r, height=1, bg=C["border"]).pack(fill="x")
 		self._build_grid()
@@ -243,7 +254,7 @@ class GlyphKitApp:
 
 	def _lock_layout(self):
 		"""Lock grid height and set explicit window geometry."""
-		self.root.update_idletasks()
+		self.root.update()
 		children = self.char_frame.winfo_children()
 		if children:
 			row_h = children[0].winfo_reqheight() + (GAP // 2 + 1) * 2
@@ -252,7 +263,7 @@ class GlyphKitApp:
 		grid_h = GRID_ROWS * row_h + 8
 		self.grid_container.configure(height=grid_h)
 		self.grid_container.pack_propagate(False)
-		self.root.update_idletasks()
+		self.root.update()
 		self.win_h = self.root.winfo_reqheight()
 		self.root.geometry(f"{self.win_w}x{self.win_h}")
 
@@ -506,12 +517,14 @@ class GlyphKitApp:
 			lbl.configure(fg=default_fg, bg=default_bg, font=("Consolas", 9))
 		if hasattr(self, "_fav_canvas"):
 			self._fav_accent.configure(bg="#1a3a36")
-			self._fav_set_colors(self._fav_defaults[1], self._fav_defaults[0], star="\u2606")
+			self._fav_set_colors(*self._fav_defaults, star="\u2606")
 		if hasattr(self, "_recent_canvas"):
 			self._recent_accent.configure(bg="#1a3a36")
-			self._recent_set_colors(self._recent_defaults[1], self._recent_defaults[0])
+			self._recent_set_colors(*self._recent_defaults)
 		if hasattr(self, "_del_btn_frame"):
 			self._del_btn_frame.destroy()
+		if hasattr(self, "_clear_btn_frame"):
+			self._clear_btn_frame.destroy()
 
 	# --- Special Tabs (Recents + Favorites) ---
 
@@ -555,7 +568,7 @@ class GlyphKitApp:
 		)
 		self._fav_canvas = fav_cvs
 		self._fav_accent = fav_accent
-		self._fav_defaults = (fav_bg, fav_fg)
+		self._fav_defaults = (fav_fg, fav_bg)
 
 		fav_cvs.bind("<Button-1>", lambda e: self._show_favorites())
 		fav_cvs.bind("<Enter>", lambda e: self._fav_hover_in())
@@ -586,7 +599,7 @@ class GlyphKitApp:
 		)
 		self._recent_canvas = rec_cvs
 		self._recent_accent = rec_accent
-		self._recent_defaults = (rec_bg, rec_fg)
+		self._recent_defaults = (rec_fg, rec_bg)
 
 		rec_cvs.bind("<Button-1>", lambda e: self._show_recents())
 		rec_cvs.bind("<Enter>", lambda e: self._recent_hover_in())
@@ -603,12 +616,14 @@ class GlyphKitApp:
 
 	def _fav_hover_in(self):
 		if self.current_cat != "_favorites":
-			self._fav_set_colors(C["teal"], self._fav_defaults[0])
+			self._fav_set_colors(C["teal"], self._fav_defaults[1])
 		self._set_status("Right-click any character to add to Favorites")
 
 	def _fav_hover_out(self):
-		if self.current_cat != "_favorites":
-			self._fav_set_colors(*self._fav_defaults[::-1])
+		if self.current_cat == "_favorites":
+			self._fav_set_colors(C["teal"], C["teal_dark"], star="\u2605")
+		else:
+			self._fav_set_colors(*self._fav_defaults, star="\u2606")
 		self._set_status(self.status_default)
 
 	def _show_favorites(self):
@@ -745,10 +760,7 @@ class GlyphKitApp:
 			return
 		self._favorites.append(char)
 		self._save_config()
-		self._set_status(f"Added to Favorites: {char}  ({name})", "#40c090")
-		if self._reset_timer:
-			self.root.after_cancel(self._reset_timer)
-		self._reset_timer = self.root.after(2000, self._reset_status)
+		self._show_transient(f"Added to Favorites: {char}  ({name})", "#40c090")
 		if self.current_cat == "_favorites":
 			self._render_favorites()
 
@@ -757,10 +769,7 @@ class GlyphKitApp:
 		if char in self._favorites:
 			self._favorites.remove(char)
 			self._save_config()
-			self._set_status(f"Removed from Favorites: {char}  ({name})", "#e87040")
-			if self._reset_timer:
-				self.root.after_cancel(self._reset_timer)
-			self._reset_timer = self.root.after(2000, self._reset_status)
+			self._show_transient(f"Removed from Favorites: {char}  ({name})", "#e87040")
 			if not self._favorites:
 				self._delete_mode = False
 			self._render_favorites()
@@ -774,12 +783,14 @@ class GlyphKitApp:
 
 	def _recent_hover_in(self):
 		if self.current_cat != "_recents":
-			self._recent_set_colors(C["teal"], self._recent_defaults[0])
+			self._recent_set_colors(C["teal"], self._recent_defaults[1])
 		self._set_status(f"Last {MAX_RECENTS} used characters \u2014 auto-updated on click")
 
 	def _recent_hover_out(self):
-		if self.current_cat != "_recents":
-			self._recent_set_colors(*self._recent_defaults[::-1])
+		if self.current_cat == "_recents":
+			self._recent_set_colors(C["teal"], C["teal_dark"])
+		else:
+			self._recent_set_colors(*self._recent_defaults)
 		self._set_status(self.status_default)
 
 	def _show_recents(self):
@@ -838,6 +849,48 @@ class GlyphKitApp:
 		for col in range(COLUMNS):
 			self.char_frame.columnconfigure(col, weight=1, minsize=BTN_SIZE)
 
+		self._build_clear_btn()
+
+	def _build_clear_btn(self):
+		"""Add clear button at bottom-right of recents grid."""
+		if hasattr(self, "_clear_btn_frame"):
+			self._clear_btn_frame.destroy()
+
+		self._clear_btn_frame = tk.Frame(self.grid_container, bg=C["bg"])
+		self._clear_btn_frame.pack(anchor="e", padx=6, pady=(0, 2))
+
+		if not self._recents:
+			return
+
+		text = "\u2715"
+		bg, fg = C["bg"], "#666666"
+		hover_bg, hover_fg = "#1a2a28", C["teal_dim"]
+		hover_status = "Clear recent characters"
+
+		btn = tk.Label(
+			self._clear_btn_frame, text=f" {text} ",
+			bg=bg, fg=fg, font=("Segoe UI", 9, "bold"),
+			cursor="hand2",
+		)
+		btn.pack()
+
+		btn.bind("<Button-1>", lambda e: self._clear_recents())
+		btn.bind("<Enter>", lambda e: (
+			btn.configure(bg=hover_bg, fg=hover_fg),
+			self._set_status(hover_status),
+		))
+		btn.bind("<Leave>", lambda e: (
+			btn.configure(bg=bg, fg=fg),
+			self._set_status(self.status_default),
+		))
+
+	def _clear_recents(self):
+		"""Clear all recent characters."""
+		self._recents.clear()
+		self._save_config()
+		self._show_transient("Recent characters cleared", C["teal_dim"])
+		self._render_recents()
+
 	def _add_recent(self, char):
 		"""Add a character to the front of the recents list."""
 		if char in self._recents:
@@ -874,40 +927,46 @@ class GlyphKitApp:
 		self.char_frame.columnconfigure(0, weight=1)
 
 		info = APP_INFO
+		dim = C["text_dim"]
+		sep = "  |  "
+
+		# Row 0: Name + version
 		tk.Label(
 			self.char_frame,
-			text=f"{info['name']}  v{info['version']}  \u2014  {info['description']}",
+			text=f"{info['name']}  v{info['version']}",
 			bg=C["bg"], fg=C["teal"], font=("Segoe UI", 12, "bold"), anchor="w",
 		).grid(row=0, column=0, sticky="w", padx=4, pady=(4, 2))
 
+		# Row 1: Author + GitHub link + license + stats
 		row1 = tk.Frame(self.char_frame, bg=C["bg"])
-		row1.grid(row=1, column=0, sticky="w", padx=4, pady=(2, 4))
+		row1.grid(row=1, column=0, sticky="w", padx=4, pady=(2, 2))
 
 		tk.Label(
-			row1, text="Author: ",
-			bg=C["bg"], fg=C["text_dim"], font=("Segoe UI", 9),
+			row1, text=f"{info['author']}  /  ",
+			bg=C["bg"], fg=dim, font=("Segoe UI", 9),
 		).pack(side="left")
 
-		author = tk.Label(
-			row1, text=info["author"],
+		handle = tk.Label(
+			row1, text=info["handle"],
 			bg=C["bg"], fg=C["teal_dim"], font=("Segoe UI", 9, "underline"), cursor="hand2",
 		)
-		author.pack(side="left")
-		author.bind("<Button-1>", lambda e: __import__("os").startfile("https://github.com/Lunyxium"))
-		author.bind("<Enter>", lambda e: author.configure(fg=C["teal"]))
-		author.bind("<Leave>", lambda e: author.configure(fg=C["teal_dim"]))
+		handle.pack(side="left")
+		handle.bind("<Button-1>", lambda e: os.startfile(info["github"]))
+		handle.bind("<Enter>", lambda e: handle.configure(fg=C["teal"]))
+		handle.bind("<Leave>", lambda e: handle.configure(fg=C["teal_dim"]))
 
 		tk.Label(
-			row1,
-			text=f"  \u00b7  License: {info['license']}  \u00b7  {info['tech']}",
-			bg=C["bg"], fg=C["text_dim"], font=("Segoe UI", 9),
+			row1, text=f"{sep}{info['license']} License{sep}433 glyphs / 13 categories",
+			bg=C["bg"], fg=dim, font=("Segoe UI", 9),
 		).pack(side="left")
 
+		# Row 2: Shortcuts + stack
 		row2 = tk.Frame(self.char_frame, bg=C["bg"])
 		row2.grid(row=2, column=0, sticky="w", padx=4, pady=(0, 4))
 		tk.Label(
-			row2, text=f"Toggle: {info['hotkey']}  \u00b7  Close: Esc (while focused)",
-			bg=C["bg"], fg=C["text_dim"], font=("Segoe UI", 9),
+			row2,
+			text=f"Toggle: {info['hotkey']}{sep}Close: Esc{sep}Python + tkinter + ctypes",
+			bg=C["bg"], fg=dim, font=("Segoe UI", 9),
 		).pack(side="left")
 
 	def _toggle_about(self, _event=None):
@@ -1021,7 +1080,10 @@ class GlyphKitApp:
 	def _hover_out(self, btn):
 		btn.configure(bg=C["btn"])
 		self.hover_active = False
-		self._set_status(self.status_default)
+		if self._transient_status:
+			self._set_status(self._transient_status, self._transient_color)
+		else:
+			self._set_status(self.status_default)
 
 	# --- Click ---
 
@@ -1038,43 +1100,41 @@ class GlyphKitApp:
 		mode_key = COPY_MODES[self._copy_mode]["key"]
 
 		if mode_key == "html":
-			# Copy as HTML hex entity
 			value = f"&#x{ord(char):04X};"
 			self.root.clipboard_clear()
 			self.root.clipboard_append(value)
 			self.root.update()
-			self.status_default = f"Copied: {value}  ({name})"
-			self._set_status(self.status_default, C["amber"])
+			self._show_transient(f"Copied: {value}  ({name})", C["amber"])
 		elif mode_key == "code":
-			# Copy as Unicode codepoint
 			value = f"U+{ord(char):04X}"
 			self.root.clipboard_clear()
 			self.root.clipboard_append(value)
 			self.root.update()
-			self.status_default = f"Copied: {value}  ({name})"
-			self._set_status(self.status_default, C["purple"])
+			self._show_transient(f"Copied: {value}  ({name})", C["purple"])
 		else:
-			# Copy the actual character (copy + auto modes)
 			self.root.clipboard_clear()
 			self.root.clipboard_append(char)
 			self.root.update()
-			self.status_default = f"Copied: {char}  ({name})"
-			self._set_status(self.status_default, C["teal"])
+			self._show_transient(f"Copied: {char}  ({name})", C["teal"])
 
 			if mode_key == "auto":
 				self.root.after(50, send_paste)
 
-		# Reset status after delay
-		if self._reset_timer:
-			self.root.after_cancel(self._reset_timer)
-		self._reset_timer = self.root.after(2000, self._reset_status)
-
-		# Save recents
 		self._save_config()
 
-	def _reset_status(self):
+	def _show_transient(self, text, color):
+		"""Show a temporary status message that auto-clears after 2s."""
+		self._transient_status = text
+		self._transient_color = color
+		self._set_status(text, color)
+		if self._reset_timer:
+			self.root.after_cancel(self._reset_timer)
+		self._reset_timer = self.root.after(2000, self._clear_transient)
+
+	def _clear_transient(self):
 		self._reset_timer = None
-		self.status_default = self._default_status_text()
+		self._transient_status = None
+		self._transient_color = None
 		if not self.hover_active:
 			self._set_status(self.status_default)
 
@@ -1158,6 +1218,9 @@ class GlyphKitApp:
 		else:
 			self.root.deiconify()
 			self._visible = True
+			# Reapply opacity then styles — alpha can strip WS_EX flags
+			self.root.attributes("-alpha", IDLE_OPACITY)
+			self.root.after(10, lambda: set_no_activate(self.root))
 
 	# === Drag & Snap ===
 
@@ -1189,7 +1252,7 @@ class GlyphKitApp:
 
 	def _position_bottom(self):
 		"""Position window at bottom-center of the screen."""
-		self.root.update_idletasks()
+		self.root.update()
 		left, _top, right, bottom = get_work_area()
 		x = left + (right - left - self.win_w) // 2
 		y = bottom - self.win_h
