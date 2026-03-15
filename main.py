@@ -1151,6 +1151,9 @@ class GlyphKitApp:
 		self.char_frame.pack(fill="x", anchor="n")
 
 	def _fill_grid(self, chars):
+		# Hide frame during population to prevent one-by-one loading flicker
+		self.char_frame.pack_forget()
+
 		for w in self.char_frame.winfo_children():
 			w.destroy()
 
@@ -1171,6 +1174,9 @@ class GlyphKitApp:
 
 		for col in range(self._columns):
 			self.char_frame.columnconfigure(col, weight=1, minsize=self._btn_size)
+
+		# Show frame at once — all widgets appear together
+		self.char_frame.pack(fill="x", anchor="n")
 
 	# --- Status Bar ---
 
