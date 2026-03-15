@@ -1538,7 +1538,7 @@ class GlyphKitApp:
 			self._open_settings()
 
 	def _open_settings(self):
-		fw = self.win_w * 2 // 3
+		fw = self.win_w // 2
 		fh = self.win_h
 		main_x = self.root.winfo_x()
 		main_y = self.root.winfo_y()
@@ -1582,6 +1582,23 @@ class GlyphKitApp:
 		self._settings_win = None
 		if hasattr(self, "titlebar"):
 			self.titlebar.itemconfig("gear", fill=C["text_dim"])
+		# Re-evaluate opacity: if mouse is not over main window, start fade
+		self.root.after(100, self._check_mouse_after_settings)
+
+	def _check_mouse_after_settings(self):
+		"""After settings close, check if mouse is over main window and fade if not."""
+		if self._idle_opacity >= 1.0:
+			return
+		try:
+			mx = self.root.winfo_pointerx() - self.root.winfo_rootx()
+			my = self.root.winfo_pointery() - self.root.winfo_rooty()
+			inside = 0 <= mx <= self.win_w and 0 <= my <= self.win_h
+			if not inside:
+				self._on_mouse_leave()
+			else:
+				self.root.attributes("-alpha", 1.0)
+		except Exception:
+			pass
 
 	def _build_settings_ui(self, win, fw, fh):
 		"""Build the settings flyout with titlebar, 2-column layout, bordered boxes."""
@@ -1739,28 +1756,36 @@ class GlyphKitApp:
 		build_fn(content)
 
 	def _build_setting_slider(self, parent, values, labels, current_idx, attr, font_v, font_s):
-		"""Build a discrete slider with inline min/max labels."""
+		"""Build a discrete slider with fixed-width inline min/max labels."""
 		s = self._scale
 		n = len(values)
 		setattr(self, attr, values[current_idx])
 
-		# Layout: [min_label] [track] [max_label]
-		row = tk.Frame(parent, bg=C["bg"])
-		row.pack(fill="x")
-
 		min_text = labels[0] if labels and labels[0] else ""
 		max_text = labels[-1] if labels and labels[-1] else ""
 
-		if min_text:
-			tk.Label(row, text=min_text, bg=C["bg"], fg=C["text_dim"],
-				font=font_s).pack(side="left", padx=(0, round(4 * s)))
-		if max_text:
-			tk.Label(row, text=max_text, bg=C["bg"], fg=C["text_dim"],
-				font=font_s).pack(side="right", padx=(round(4 * s), 0))
+		# Layout: [min_label(fixed)] [track(expand)] [max_label(fixed)]
+		row = tk.Frame(parent, bg=C["bg"])
+		row.pack(fill="x")
 
-		track_h = round(22 * s)
+		# Fixed-width label containers so all sliders track the same width
+		label_w = round(34 * s)
+
+		lf = tk.Frame(row, bg=C["bg"], width=label_w, height=round(18 * s))
+		lf.pack(side="left")
+		lf.pack_propagate(False)
+		tk.Label(lf, text=min_text, bg=C["bg"], fg=C["text_dim"],
+			font=font_s, anchor="e").pack(fill="both", expand=True)
+
+		rf = tk.Frame(row, bg=C["bg"], width=label_w, height=round(18 * s))
+		rf.pack(side="right")
+		rf.pack_propagate(False)
+		tk.Label(rf, text=max_text, bg=C["bg"], fg=C["text_dim"],
+			font=font_s, anchor="w").pack(fill="both", expand=True)
+
+		track_h = round(20 * s)
 		track = tk.Canvas(row, height=track_h, bg=C["bg"], highlightthickness=0, bd=0, cursor="hand2")
-		track.pack(fill="x", expand=True)
+		track.pack(fill="x", expand=True, padx=round(3 * s))
 
 		def _draw_slider():
 			track.delete("all")
@@ -1922,11 +1947,16 @@ class GlyphKitApp:
 			self._set_status("Applying settings\u2026", C["teal"])
 			self.root.update()
 
-			# Close settings, rebuild, reopen
-			self._close_settings()
+			# Close settings (skip fade check — we're reopening immediately)
+			if self._settings_win and self._settings_win.winfo_exists():
+				self._settings_win.destroy()
+			self._settings_win = True  # Truthy sentinel to suppress fade during rebuild
 			self._rebuild()
+			self._settings_win = None
 			self._show_transient("Settings applied", C["teal"])
-			self.root.after(200, self._open_settings)
+			# Keep at full opacity until settings reopen
+			self.root.attributes("-alpha", 1.0)
+			self._open_settings()
 		except Exception as e:
 			# Surface the error so it's not silently swallowed
 			print(f"Settings apply error: {e}")
