@@ -114,8 +114,10 @@ def get_system_dpi():
 
 
 def get_foreground_window_rect():
-	"""Get the bounding rect and hwnd of the current foreground window.
+	"""Get the visible bounding rect and hwnd of the current foreground window.
 
+	Uses DwmGetWindowAttribute to get the actual visible frame (excluding
+	the invisible drop shadow that Windows 10/11 adds to windows).
 	Returns (left, top, right, bottom, hwnd) or None on failure.
 	"""
 	try:
@@ -123,7 +125,13 @@ def get_foreground_window_rect():
 		if not hwnd:
 			return None
 		rect = wintypes.RECT()
-		user32.GetWindowRect(hwnd, ctypes.byref(rect))
+		# DWMWA_EXTENDED_FRAME_BOUNDS = 9 — gives visible frame without shadow
+		hr = ctypes.windll.dwmapi.DwmGetWindowAttribute(
+			hwnd, 9, ctypes.byref(rect), ctypes.sizeof(rect),
+		)
+		if hr != 0:
+			# Fallback to regular GetWindowRect
+			user32.GetWindowRect(hwnd, ctypes.byref(rect))
 		return rect.left, rect.top, rect.right, rect.bottom, hwnd
 	except Exception:
 		return None

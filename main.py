@@ -232,7 +232,7 @@ class GlyphKitApp:
 
 		# Snapping
 		self._snap_enabled = self._config.get("snap_enabled", True)
-		self._snap_threshold = 15
+		self._snap_threshold = 30
 
 		# Scaled font sizes for UI elements
 		self._font_ui = round(9 * s)
@@ -297,7 +297,7 @@ class GlyphKitApp:
 		}
 		try:
 			with open(CONFIG_PATH, "w") as f:
-				json.dump(config, f)
+				json.dump(config, f, indent=2, ensure_ascii=False)
 		except OSError:
 			pass
 
@@ -412,18 +412,19 @@ class GlyphKitApp:
 		# --- Close button ---
 		cx = self.win_w - round(20 * self._scale)
 		bar.create_text(
-			cx, h // 2 - 2, text="×",
+			cx, h // 2 - 2, text="\u00d7",
 			fill=C["text_dim"], font=("Segoe UI", self._font_close), anchor="center", tags="close",
 		)
 		bar.tag_bind("close", "<Button-1>", lambda e: self._quit())
 		bar.tag_bind("close", "<Enter>", lambda e: bar.itemconfig("close", fill="#ff6b6b"))
 		bar.tag_bind("close", "<Leave>", lambda e: bar.itemconfig("close", fill=C["text_dim"]))
 
-		# --- Settings gear ---
-		gx = cx - round(28 * self._scale)
+		# --- Settings gear (gold highlight, smaller font) ---
+		gear_font_size = max(7, round(self._font_ui * 0.9))
+		gx = cx - round(44 * self._scale)
 		self._gear_id = bar.create_text(
-			gx, h // 2, text="⚙",
-			fill=C["text_dim"], font=("Segoe UI", self._font_icon),
+			gx, h // 2, text="\u2699",
+			fill=C["text_dim"], font=("Segoe UI", gear_font_size, "bold"),
 			anchor="center", tags="gear",
 		)
 		bar.tag_bind("gear", "<Button-1>", lambda e: self._toggle_settings())
@@ -431,7 +432,7 @@ class GlyphKitApp:
 		bar.tag_bind("gear", "<Leave>", lambda e: self._gear_hover_out())
 
 		# --- Copy mode toggle (cycles through 4 modes) ---
-		ax = gx - round(56 * self._scale)
+		ax = gx - round(52 * self._scale)
 		mode = COPY_MODES[self._copy_mode]
 		self._mode_id = bar.create_text(
 			ax, h // 2, text=mode["label"],
@@ -451,12 +452,12 @@ class GlyphKitApp:
 
 	def _gear_hover_in(self):
 		is_open = self._settings_win and self._settings_win.winfo_exists()
-		self.titlebar.itemconfig("gear", fill=C["teal"])
+		self.titlebar.itemconfig("gear", fill=C["gold"])
 		self._set_status("Close settings" if is_open else "Open settings")
 
 	def _gear_hover_out(self):
 		is_open = self._settings_win and self._settings_win.winfo_exists()
-		self.titlebar.itemconfig("gear", fill=C["teal"] if is_open else C["text_dim"])
+		self.titlebar.itemconfig("gear", fill=C["gold_dim"] if is_open else C["text_dim"])
 		self._set_status(self.status_default)
 
 	def _draw_pattern(self, canvas, w, h):
@@ -1138,9 +1139,29 @@ class GlyphKitApp:
 
 	def _on_grid_frame_configure(self, _event=None):
 		self._grid_canvas.configure(scrollregion=self._grid_canvas.bbox("all"))
+		self._update_scroll_indicator()
 
 	def _on_grid_canvas_configure(self, event):
 		self._grid_canvas.itemconfig(self._grid_canvas_win, width=event.width)
+		self._update_scroll_indicator()
+
+	def _update_scroll_indicator(self):
+		"""Show a subtle scroll indicator if content overflows."""
+		self._grid_canvas.delete("scroll_ind")
+		bbox = self._grid_canvas.bbox("all")
+		if not bbox:
+			return
+		content_h = bbox[3] - bbox[1]
+		canvas_h = self._grid_canvas.winfo_height()
+		if content_h > canvas_h + 2:
+			# Small down-arrow indicator at bottom-right
+			x = self._grid_canvas.winfo_width() - round(12 * self._scale)
+			y = canvas_h - round(6 * self._scale)
+			self._grid_canvas.create_text(
+				x, y, text="\u25bc", fill=C["text_dim"],
+				font=("Segoe UI", max(6, round(7 * self._scale))),
+				tags="scroll_ind",
+			)
 
 	def _bind_mousewheel(self):
 		self._grid_canvas.bind_all("<MouseWheel>", self._on_mousewheel)
@@ -1150,6 +1171,7 @@ class GlyphKitApp:
 
 	def _on_mousewheel(self, event):
 		self._grid_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+		self._update_scroll_indicator()
 
 	def _fill_grid(self, chars):
 		# Hide frame during population to prevent loading flicker
@@ -1338,6 +1360,7 @@ class GlyphKitApp:
 	def _setup_opacity(self):
 		"""Set idle opacity and bind mouse enter/leave with debounce."""
 		self._opacity_timer = None
+		self._fade_animating = False
 		self._fade_delay = self._config.get("fade_delay", 50)
 		self.root.attributes("-alpha", self._idle_opacity)
 		self.root.bind("<Enter>", self._on_mouse_enter)
@@ -1347,6 +1370,7 @@ class GlyphKitApp:
 		if self._opacity_timer:
 			self.root.after_cancel(self._opacity_timer)
 			self._opacity_timer = None
+		self._fade_animating = False
 		self.root.attributes("-alpha", 1.0)
 
 	def _on_mouse_leave(self, event=None):
@@ -1357,8 +1381,26 @@ class GlyphKitApp:
 		self._opacity_timer = self.root.after(self._fade_delay, self._fade_out)
 
 	def _fade_out(self):
+		"""Gradually fade to idle opacity over ~300ms."""
 		self._opacity_timer = None
-		self.root.attributes("-alpha", self._idle_opacity)
+		self._fade_animating = True
+		self._fade_step(1.0, self._idle_opacity, 300, 20)
+
+	def _fade_step(self, current, target, total_ms, step_ms):
+		"""Animate opacity from current to target."""
+		if not self._fade_animating:
+			return
+		diff = current - target
+		steps_left = max(1, total_ms // step_ms)
+		new_alpha = current - diff / steps_left
+		if abs(new_alpha - target) < 0.02 or new_alpha <= target:
+			self.root.attributes("-alpha", target)
+			self._fade_animating = False
+			return
+		self.root.attributes("-alpha", new_alpha)
+		self._opacity_timer = self.root.after(
+			step_ms, lambda: self._fade_step(new_alpha, target, total_ms - step_ms, step_ms)
+		)
 
 	# === Escape to Close ===
 
@@ -1489,13 +1531,13 @@ class GlyphKitApp:
 			self._open_settings()
 
 	def _open_settings(self):
-		fw = self.win_w // 2
+		fw = self.win_w
 		fh = self.win_h
 		main_x = self.root.winfo_x()
 		main_y = self.root.winfo_y()
 
-		# Position above main window, right-aligned
-		fx = main_x + self.win_w - fw
+		# Position above main window, full width
+		fx = main_x
 		fy = main_y - fh
 
 		# If not enough space above, open below
@@ -1506,17 +1548,19 @@ class GlyphKitApp:
 		win = tk.Toplevel(self.root)
 		win.overrideredirect(True)
 		win.attributes("-topmost", True)
-		win.geometry(f"{fw}x{fh}+{fx}+{fy}")
-		win.configure(bg=C["surface"])
+		win.configure(bg=C["bg"])
 
 		self._settings_win = win
 		self._settings_dirty = False
 
-		# Gear highlight
-		self.titlebar.itemconfig("gear", fill=C["teal"])
+		# Gear highlight (gold)
+		self.titlebar.itemconfig("gear", fill=C["gold_dim"])
 
 		# Build settings UI
 		self._build_settings_ui(win, fw, fh)
+
+		# Set geometry after building so we get the right size
+		win.geometry(f"{fw}x{fh}+{fx}+{fy}")
 
 		# Apply WS_EX_NOACTIVATE after mapping
 		win.after(50, lambda: set_no_activate(win))
@@ -1532,109 +1576,165 @@ class GlyphKitApp:
 			self.titlebar.itemconfig("gear", fill=C["text_dim"])
 
 	def _build_settings_ui(self, win, fw, fh):
-		"""Build the settings flyout content."""
+		"""Build the settings flyout with titlebar, 2-column layout, bordered boxes."""
 		s = self._scale
-		pad = round(12 * s)
+		pad = round(8 * s)
 		font_label = ("Segoe UI", self._font_ui, "bold")
 		font_value = ("Segoe UI", self._font_ui)
 		font_small = ("Segoe UI", max(7, self._font_ui - 1))
+		box_bg = C["bg"]
+		box_border = C["border"]
 
 		# --- Separator line at bottom (between flyout and main window) ---
 		tk.Frame(win, height=2, bg=C["teal_dim"]).pack(side="bottom", fill="x")
 
-		# --- Title ---
-		title_frame = tk.Frame(win, bg=C["surface"])
-		title_frame.pack(fill="x", padx=pad, pady=(pad, round(6 * s)))
-		tk.Label(
-			title_frame, text="⚙ Settings",
-			bg=C["surface"], fg=C["teal"], font=("Segoe UI", self._font_title, "bold"),
-		).pack(anchor="w")
+		# --- Titlebar (same style as main window) ---
+		th = self._titlebar_h
+		title_bar = tk.Canvas(win, height=th, bg=C["titlebar"], highlightthickness=0)
+		title_bar.pack(fill="x")
+		self._draw_pattern(title_bar, fw, th)
 
-		# --- Scrollable content ---
-		content = tk.Frame(win, bg=C["surface"])
-		content.pack(fill="both", expand=True, padx=pad)
+		title_bar.create_text(
+			round(14 * s), th // 2, text="\u2699 Settings",
+			fill=C["gold_dim"], font=("Segoe UI", self._font_title, "bold"),
+			anchor="w",
+		)
+
+		# Close X
+		close_x = fw - round(20 * s)
+		title_bar.create_text(
+			close_x, th // 2 - 2, text="\u00d7",
+			fill=C["text_dim"], font=("Segoe UI", self._font_close),
+			anchor="center", tags="sclose",
+		)
+		title_bar.tag_bind("sclose", "<Button-1>", lambda e: self._close_settings())
+		title_bar.tag_bind("sclose", "<Enter>", lambda e: title_bar.itemconfig("sclose", fill="#ff6b6b"))
+		title_bar.tag_bind("sclose", "<Leave>", lambda e: title_bar.itemconfig("sclose", fill=C["text_dim"]))
+
+		# Teal separator
+		tk.Frame(win, height=1, bg=C["teal_dim"]).pack(fill="x")
+
+		# --- Content area: 2 columns ---
+		content = tk.Frame(win, bg=C["bg"])
+		content.pack(fill="both", expand=True, padx=pad, pady=pad)
+
+		left_col = tk.Frame(content, bg=C["bg"])
+		left_col.pack(side="left", fill="both", expand=True, padx=(0, round(4 * s)))
+
+		right_col = tk.Frame(content, bg=C["bg"])
+		right_col.pack(side="right", fill="both", expand=True, padx=(round(4 * s), 0))
+
+		# === LEFT COLUMN ===
 
 		# --- Scale ---
-		self._build_setting_slider(
-			content, "Scale", SCALE_STEPS,
-			["80%", "90%", "100%", "110%", "125%"],
-			SCALE_STEPS.index(self._user_scale) if self._user_scale in SCALE_STEPS else 2,
-			"_pending_scale", font_label, font_value, font_small,
-			hover="Adjust overall UI size (auto-scaled for your display)",
+		self._build_setting_box(
+			left_col, "Scale", box_bg, box_border, font_label, lambda inner: (
+				self._build_setting_slider(
+					inner, SCALE_STEPS,
+					["80%", "90%", "100%", "110%", "125%"],
+					SCALE_STEPS.index(self._user_scale) if self._user_scale in SCALE_STEPS else 2,
+					"_pending_scale", font_value, font_small,
+				)
+			), hover="Adjust overall UI size",
 		)
 
 		# --- Idle Opacity ---
 		opacity_keys = list(OPACITY_PRESETS.keys())
-		opacity_labels = ["Off", "High", "Mid", "Low"]
 		current_oi = opacity_keys.index(self._opacity_key) if self._opacity_key in opacity_keys else 2
-		self._build_setting_slider(
-			content, "Idle Opacity", opacity_keys, opacity_labels,
-			current_oi, "_pending_opacity", font_label, font_value, font_small,
-			hover="Transparency when mouse leaves the window",
+		self._build_setting_box(
+			left_col, "Idle Opacity", box_bg, box_border, font_label, lambda inner: (
+				self._build_setting_slider(
+					inner, opacity_keys,
+					["Off", "High", "Mid", "Low"],
+					current_oi, "_pending_opacity", font_value, font_small,
+				)
+			), hover="Transparency when idle",
 		)
 
 		# --- Fade Delay ---
-		delay_steps = list(range(50, 3050, 50))  # 50ms to 3000ms
+		delay_steps = list(range(50, 1050, 50))  # 50ms to 1000ms, 20 steps
 		current_delay = self._config.get("fade_delay", 50)
 		delay_idx = min(len(delay_steps) - 1, max(0, (current_delay - 50) // 50))
-		self._build_setting_slider(
-			content, "Fade Delay", delay_steps,
-			["Fast"] + [""] * (len(delay_steps) - 2) + ["Slow"],
-			delay_idx, "_pending_fade_delay", font_label, font_value, font_small,
-			hover="Time before window fades after mouse leaves",
+		self._build_setting_box(
+			left_col, "Fade Delay", box_bg, box_border, font_label, lambda inner: (
+				self._build_setting_slider(
+					inner, delay_steps,
+					["Fast"] + [""] * (len(delay_steps) - 2) + ["Slow"],
+					delay_idx, "_pending_fade_delay", font_value, font_small,
+				)
+			), hover="Delay before fade starts",
 		)
 
+		# === RIGHT COLUMN ===
+
 		# --- Glyph Size ---
-		self._build_setting_buttons(
-			content, "Glyph Size", ["S", "M", "L"],
-			self._glyph_key, "_pending_glyph", font_label, font_value,
-			hover="Character size in the grid (S=small, M=default, L=large)",
+		self._build_setting_box(
+			right_col, "Glyph Size", box_bg, box_border, font_label, lambda inner: (
+				self._build_setting_buttons(
+					inner, ["S", "M", "L"],
+					self._glyph_key, "_pending_glyph", font_value,
+				)
+			), hover="S=small, M=default, L=large",
 		)
 
 		# --- Window Snapping ---
-		self._build_setting_toggle(
-			content, "Window Snapping", self._snap_enabled,
-			"_pending_snap", font_label, font_value,
-			hover="Snap to edges of other windows while dragging",
+		self._build_setting_box(
+			right_col, "Window Snapping", box_bg, box_border, font_label, lambda inner: (
+				self._build_setting_toggle(
+					inner, self._snap_enabled, "_pending_snap",
+				)
+			), hover="Snap to nearby window edges",
 		)
 
-		# --- Apply Button (bottom-right, hidden until dirty) ---
-		self._apply_frame = tk.Frame(win, bg=C["surface"])
-		self._apply_frame.pack(fill="x", padx=pad, pady=(round(4 * s), pad))
+		# --- Apply Button ---
+		self._apply_frame = tk.Frame(right_col, bg=C["bg"])
+		self._apply_frame.pack(fill="x", pady=(round(4 * s), 0))
 		self._apply_btn = tk.Label(
-			self._apply_frame, text="  Apply  ",
+			self._apply_frame, text="  \u2713 Apply  ",
 			bg=C["teal_dark"], fg=C["teal_dim"],
 			font=font_label, cursor="hand2",
 		)
-		# Hidden until a change is made
 		self._apply_btn.bind("<Button-1>", lambda e: self._apply_settings())
-		self._apply_btn.bind("<Enter>", lambda e: self._apply_btn.configure(
-			bg=C["teal_dim"], fg=C["bg"],
+		self._apply_btn.bind("<Enter>", lambda e: (
+			self._apply_btn.configure(bg=C["teal_dim"], fg=C["bg"]),
+			self._set_status("Apply changes and restart"),
 		))
-		self._apply_btn.bind("<Leave>", lambda e: self._apply_btn.configure(
-			bg=C["teal_dark"], fg=C["teal_dim"],
+		self._apply_btn.bind("<Leave>", lambda e: (
+			self._apply_btn.configure(bg=C["teal_dark"], fg=C["teal_dim"]),
+			self._set_status(self.status_default),
 		))
 
-	def _build_setting_slider(self, parent, label, values, labels, current_idx, attr, font_l, font_v, font_s, hover=""):
-		"""Build a discrete slider setting."""
+	def _build_setting_box(self, parent, title, bg, border_color, font_title, build_fn, hover=""):
+		"""Build a bordered settings box with title and content."""
 		s = self._scale
-		frame = tk.Frame(parent, bg=C["surface"])
-		frame.pack(fill="x", pady=(0, round(10 * s)))
+		border = tk.Frame(parent, bg=border_color)
+		border.pack(fill="x", pady=(0, round(6 * s)))
 
-		lbl = tk.Label(frame, text=label, bg=C["surface"], fg=C["text"], font=font_l)
+		inner_frame = tk.Frame(border, bg=bg)
+		inner_frame.pack(fill="x", padx=1, pady=1)
+
+		# Title row
+		title_row = tk.Frame(inner_frame, bg=bg)
+		title_row.pack(fill="x", padx=round(8 * s), pady=(round(6 * s), round(2 * s)))
+		lbl = tk.Label(title_row, text=title, bg=bg, fg=C["text"], font=font_title)
 		lbl.pack(anchor="w")
 		if hover:
 			lbl.bind("<Enter>", lambda e: self._set_status(hover))
 			lbl.bind("<Leave>", lambda e: self._set_status(self.status_default))
 
-		slider_frame = tk.Frame(frame, bg=C["surface"])
-		slider_frame.pack(fill="x", pady=(round(4 * s), 0))
+		# Content
+		content = tk.Frame(inner_frame, bg=bg)
+		content.pack(fill="x", padx=round(8 * s), pady=(0, round(8 * s)))
+		build_fn(content)
 
+	def _build_setting_slider(self, parent, values, labels, current_idx, attr, font_v, font_s):
+		"""Build a discrete slider with bigger grab handle and min/max labels."""
+		s = self._scale
 		n = len(values)
 		setattr(self, attr, values[current_idx])
 
-		# Track bar
-		track = tk.Canvas(slider_frame, height=round(24 * s), bg=C["surface"], highlightthickness=0, bd=0)
+		track_h = round(32 * s)
+		track = tk.Canvas(parent, height=track_h, bg=C["bg"], highlightthickness=0, bd=0, cursor="hand2")
 		track.pack(fill="x")
 
 		def _draw_slider():
@@ -1643,35 +1743,39 @@ class GlyphKitApp:
 			if tw < 10:
 				track.after(50, _draw_slider)
 				return
-			th = track.winfo_height()
-			cy = th // 2
-			margin = round(10 * s)
+			cy = track_h // 2
+			margin = round(14 * s)
 			usable = tw - 2 * margin
 
-			# Draw track line
-			track.create_line(margin, cy, tw - margin, cy, fill=C["border"], width=2)
+			# Track line
+			track.create_line(margin, cy, tw - margin, cy, fill=C["border"], width=round(2 * s))
 
-			# Draw tick marks and labels
+			# Tick marks
 			for i in range(n):
 				x = margin + (usable * i // max(1, n - 1)) if n > 1 else margin
-				track.create_line(x, cy - round(4 * s), x, cy + round(4 * s), fill=C["border"], width=1)
+				tick_h = round(5 * s)
+				track.create_line(x, cy - tick_h, x, cy + tick_h, fill=C["border"], width=1)
 
-			# Draw active position
+			# Active knob (bigger)
 			idx = values.index(getattr(self, attr)) if getattr(self, attr) in values else 0
 			ax = margin + (usable * idx // max(1, n - 1)) if n > 1 else margin
-			r = round(6 * s)
-			track.create_oval(ax - r, cy - r, ax + r, cy + r, fill=C["teal"], outline=C["teal_dim"])
+			r = round(8 * s)
+			track.create_oval(
+				ax - r, cy - r, ax + r, cy + r,
+				fill=C["teal"], outline=C["teal_mid"], width=round(2 * s),
+			)
 
-			# Labels at ends
+			# Min/max labels below track
 			if labels:
-				track.create_text(margin, cy + round(12 * s), text=labels[0],
+				ly = cy + round(14 * s)
+				track.create_text(margin, ly, text=labels[0],
 					fill=C["text_dim"], font=font_s, anchor="n")
-				track.create_text(tw - margin, cy + round(12 * s), text=labels[-1],
+				track.create_text(tw - margin, ly, text=labels[-1],
 					fill=C["text_dim"], font=font_s, anchor="n")
 
 		def _on_click(event):
 			tw = track.winfo_width()
-			margin = round(10 * s)
+			margin = round(14 * s)
 			usable = tw - 2 * margin
 			if usable <= 0:
 				return
@@ -1685,20 +1789,11 @@ class GlyphKitApp:
 		track.bind("<B1-Motion>", _on_click)
 		track.bind("<Configure>", lambda e: _draw_slider())
 
-	def _build_setting_buttons(self, parent, label, options, current, attr, font_l, font_v, hover=""):
+	def _build_setting_buttons(self, parent, options, current, attr, font_v):
 		"""Build a button-group setting (e.g., S/M/L)."""
 		s = self._scale
-		frame = tk.Frame(parent, bg=C["surface"])
-		frame.pack(fill="x", pady=(0, round(10 * s)))
-
-		lbl = tk.Label(frame, text=label, bg=C["surface"], fg=C["text"], font=font_l)
-		lbl.pack(anchor="w")
-		if hover:
-			lbl.bind("<Enter>", lambda e: self._set_status(hover))
-			lbl.bind("<Leave>", lambda e: self._set_status(self.status_default))
-
-		btn_frame = tk.Frame(frame, bg=C["surface"])
-		btn_frame.pack(anchor="w", pady=(round(4 * s), 0))
+		btn_frame = tk.Frame(parent, bg=C["bg"])
+		btn_frame.pack(anchor="w", pady=(round(2 * s), 0))
 
 		setattr(self, attr, current)
 		btns = []
@@ -1723,38 +1818,32 @@ class GlyphKitApp:
 			b.bind("<Button-1>", lambda e, o=opt: _select(o))
 			btns.append((b, opt))
 
-	def _build_setting_toggle(self, parent, label, current, attr, font_l, font_v, hover=""):
+	def _build_setting_toggle(self, parent, current, attr):
 		"""Build an on/off toggle switch."""
 		s = self._scale
-		frame = tk.Frame(parent, bg=C["surface"])
-		frame.pack(fill="x", pady=(0, round(10 * s)))
-
 		setattr(self, attr, current)
 
-		row = tk.Frame(frame, bg=C["surface"])
-		row.pack(fill="x")
-		lbl = tk.Label(row, text=label, bg=C["surface"], fg=C["text"], font=font_l)
-		lbl.pack(side="left")
-		if hover:
-			lbl.bind("<Enter>", lambda e: self._set_status(hover))
-			lbl.bind("<Leave>", lambda e: self._set_status(self.status_default))
-
-		tw = round(36 * s)
-		th = round(18 * s)
-		toggle = tk.Canvas(row, width=tw, height=th, bg=C["surface"], highlightthickness=0, bd=0, cursor="hand2")
-		toggle.pack(side="right")
+		tw = round(40 * s)
+		th = round(20 * s)
+		toggle = tk.Canvas(parent, width=tw, height=th, bg=C["bg"], highlightthickness=0, bd=0, cursor="hand2")
+		toggle.pack(anchor="w", pady=(round(2 * s), 0))
 
 		def _draw():
 			toggle.delete("all")
 			on = getattr(self, attr)
-			bg = C["teal_dim"] if on else C["border"]
+			bg_col = C["teal_dim"] if on else C["border"]
 			r = th // 2
-			# Track
-			toggle.create_rectangle(0, 0, tw, th, fill=bg, outline=bg, width=0)
+			# Rounded track
+			toggle.create_rectangle(r, 0, tw - r, th, fill=bg_col, outline="")
+			toggle.create_oval(0, 0, th, th, fill=bg_col, outline="")
+			toggle.create_oval(tw - th, 0, tw, th, fill=bg_col, outline="")
 			# Knob
 			knob_x = tw - r if on else r
-			kr = r - 2
-			toggle.create_oval(knob_x - kr, 2, knob_x + kr, th - 2, fill="#fff" if on else C["text_dim"], outline="")
+			kr = r - 3
+			toggle.create_oval(
+				knob_x - kr, 3, knob_x + kr, th - 3,
+				fill="#fff" if on else C["text_dim"], outline="",
+			)
 
 		def _click(event):
 			setattr(self, attr, not getattr(self, attr))
