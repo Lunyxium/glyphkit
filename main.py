@@ -1621,7 +1621,7 @@ class GlyphKitApp:
 		tk.Frame(bottom, height=2, bg=C["teal_dim"]).pack(fill="x", side="bottom")
 
 		self._apply_frame = tk.Frame(bottom, bg=C["bg"])
-		self._apply_frame.pack(fill="x", padx=pad, pady=round(4 * s))
+		self._apply_frame.pack(fill="x", padx=pad, pady=round(2 * s))
 
 		apply_border = tk.Frame(self._apply_frame, bg=C["border"])
 		apply_border.pack(anchor="e")
@@ -1743,11 +1743,11 @@ class GlyphKitApp:
 	def _build_setting_box(self, parent, title, bg, border_color, font_title, build_fn, hover=""):
 		"""Build a bordered settings box with title and content."""
 		s = self._scale
-		border = tk.Frame(parent, bg=border_color)
-		border.pack(fill="both", expand=True, pady=(0, round(4 * s)))
+		border = tk.Frame(parent, bg=C["teal_dark"])
+		border.pack(fill="x", pady=(0, round(4 * s)))
 
 		inner_frame = tk.Frame(border, bg=bg)
-		inner_frame.pack(fill="x", padx=1, pady=1)
+		inner_frame.pack(fill="both", expand=True, padx=1, pady=1)
 
 		# Title row
 		title_row = tk.Frame(inner_frame, bg=bg)
