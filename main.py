@@ -286,6 +286,12 @@ class GlyphKitApp:
 		self._favorites = self._config.get("favorites", [])
 		self._recents = self._config.get("recents", [])
 
+	def _schedule_save(self):
+		"""Debounced config save — waits 500ms after last call before writing."""
+		if hasattr(self, "_save_timer") and self._save_timer:
+			self.root.after_cancel(self._save_timer)
+		self._save_timer = self.root.after(500, self._save_config)
+
 	def _save_config(self):
 		self._config.update({
 			"x": self.root.winfo_x(),
@@ -1294,7 +1300,7 @@ class GlyphKitApp:
 	def _click_char(self, btn, char, name):
 		# Visual feedback
 		btn.configure(bg=C["btn_click"])
-		self.root.after(150, lambda: btn.configure(
+		self.root.after(100, lambda: btn.configure(
 			bg=C["btn_hover"] if self.hover_active else C["btn"]
 		))
 
@@ -1324,7 +1330,8 @@ class GlyphKitApp:
 			if mode_key == "auto":
 				self.root.after(50, send_paste)
 
-		self._save_config()
+		# Debounced save — don't block rapid clicks with disk I/O
+		self._schedule_save()
 
 	def _show_transient(self, text, color):
 		"""Show a temporary status message that auto-clears after 2s."""
@@ -1443,7 +1450,7 @@ class GlyphKitApp:
 			except Exception:
 				pass
 
-		self.root.after(100, self._poll_keys)
+		self.root.after(50, self._poll_keys)
 
 	def _toggle_visibility(self):
 		"""Show or hide the window via global hotkey."""
