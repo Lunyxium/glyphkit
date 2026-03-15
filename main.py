@@ -97,6 +97,7 @@ OPACITY_PRESETS = {
 	"high": 0.80,
 	"mid":  0.66,
 	"low":  0.50,
+	"very": 0.35,
 }
 
 SCALE_STEPS = [0.80, 0.90, 1.00, 1.10, 1.25]
