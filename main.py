@@ -423,12 +423,12 @@ class GlyphKitApp:
 		bar.tag_bind("close", "<Enter>", lambda e: bar.itemconfig("close", fill="#ff6b6b"))
 		bar.tag_bind("close", "<Leave>", lambda e: bar.itemconfig("close", fill=C["text_dim"]))
 
-		# --- Settings gear (gold highlight, smaller font) ---
-		gear_font_size = max(7, round(self._font_ui * 0.9))
+		# --- Settings gear (gold highlight, clear icon) ---
+		gear_font_size = max(9, round(self._font_ui * 1.15))
 		gx = cx - round(44 * self._scale)
 		self._gear_id = bar.create_text(
 			gx, h // 2, text="\u2699",
-			fill=C["text_dim"], font=("Segoe UI Symbol", gear_font_size),
+			fill=C["text_dim"], font=("Segoe UI Symbol", gear_font_size, "bold"),
 			anchor="center", tags="gear",
 		)
 		bar.tag_bind("gear", "<Button-1>", lambda e: self._toggle_settings())
@@ -1543,14 +1543,15 @@ class GlyphKitApp:
 		main_x = self.root.winfo_x()
 		main_y = self.root.winfo_y()
 
-		# Position above main window, right-aligned
+		# Final position: above main window, right-aligned
 		fx = main_x + self.win_w - fw
-		fy = main_y - fh
+		fy_target = main_y - fh
 
 		# If not enough space above, open below
 		_, work_top, _, _ = get_work_area()
-		if fy < work_top:
-			fy = main_y + self.win_h
+		opens_above = fy_target >= work_top
+		if not opens_above:
+			fy_target = main_y + self.win_h
 
 		win = tk.Toplevel(self.root)
 		win.overrideredirect(True)
@@ -1566,14 +1567,42 @@ class GlyphKitApp:
 		# Build settings UI
 		self._build_settings_ui(win, fw, fh)
 
-		# Set geometry after building so we get the right size
-		win.geometry(f"{fw}x{fh}+{fx}+{fy}")
+		# Animate: slide out from main window edge
+		self._flyout_animate(win, fx, fy_target, fw, fh, opens_above)
 
 		# Apply WS_EX_NOACTIVATE after mapping
 		win.after(50, lambda: set_no_activate(win))
 
 		# Close on Escape
 		win.bind("<Escape>", lambda e: self._close_settings())
+
+	def _flyout_animate(self, win, fx, fy_target, fw, fh, opens_above):
+		"""Animate the settings flyout sliding out from the main window edge."""
+		steps = 8
+		step_ms = 15
+		main_y = self.root.winfo_y()
+		main_bottom = main_y + self.win_h
+
+		for i in range(steps + 1):
+			progress = i / steps
+			# Ease-out curve
+			t = 1 - (1 - progress) ** 2
+			current_h = max(1, round(fh * t))
+
+			if opens_above:
+				# Slide upward: bottom edge stays at main_y, top grows up
+				cy = main_y - current_h
+			else:
+				# Slide downward: top edge stays at main_bottom, bottom grows down
+				cy = main_bottom
+
+			win.geometry(f"{fw}x{current_h}+{fx}+{cy}")
+			win.update()
+			if i < steps:
+				win.after(step_ms)
+
+		# Ensure final position is exact
+		win.geometry(f"{fw}x{fh}+{fx}+{fy_target}")
 
 	def _close_settings(self):
 		if self._settings_win and self._settings_win.winfo_exists():
@@ -1621,15 +1650,18 @@ class GlyphKitApp:
 		# Teal separator
 		tk.Frame(win, height=1, bg=C["teal_dim"]).pack(fill="x")
 
-		# --- Content area: 2 columns ---
+		# --- Content area: 2 columns with grid for even split ---
 		content = tk.Frame(win, bg=C["bg"])
 		content.pack(fill="both", expand=True, padx=pad, pady=pad)
+		content.columnconfigure(0, weight=1, uniform="settings")
+		content.columnconfigure(1, weight=1, uniform="settings")
 
 		left_col = tk.Frame(content, bg=C["bg"])
-		left_col.pack(side="left", fill="both", expand=True, padx=(0, round(4 * s)))
+		left_col.grid(row=0, column=0, sticky="nsew", padx=(0, round(3 * s)))
 
 		right_col = tk.Frame(content, bg=C["bg"])
-		right_col.pack(side="right", fill="both", expand=True, padx=(round(4 * s), 0))
+		right_col.grid(row=0, column=1, sticky="nsew", padx=(round(3 * s), 0))
+		content.rowconfigure(0, weight=1)
 
 		# === LEFT COLUMN ===
 
@@ -1735,12 +1767,14 @@ class GlyphKitApp:
 		build_fn(content)
 
 	def _build_setting_slider(self, parent, values, labels, current_idx, attr, font_v, font_s):
-		"""Build a discrete slider with bigger grab handle and min/max labels."""
+		"""Build a discrete slider with grab handle and min/max labels."""
 		s = self._scale
 		n = len(values)
 		setattr(self, attr, values[current_idx])
 
-		track_h = round(28 * s)
+		# Height: knob area (top half) + label area (bottom)
+		knob_cy = round(12 * s)
+		track_h = round(38 * s)
 		track = tk.Canvas(parent, height=track_h, bg=C["bg"], highlightthickness=0, bd=0, cursor="hand2")
 		track.pack(fill="x")
 
@@ -1750,23 +1784,24 @@ class GlyphKitApp:
 			if tw < 10:
 				track.after(50, _draw_slider)
 				return
-			cy = track_h // 2
-			margin = round(14 * s)
+			cy = knob_cy
+			margin = round(12 * s)
 			usable = tw - 2 * margin
 
 			# Track line
 			track.create_line(margin, cy, tw - margin, cy, fill=C["border"], width=round(2 * s))
 
-			# Tick marks
-			for i in range(n):
-				x = margin + (usable * i // max(1, n - 1)) if n > 1 else margin
-				tick_h = round(5 * s)
-				track.create_line(x, cy - tick_h, x, cy + tick_h, fill=C["border"], width=1)
+			# Tick marks (only for sliders with few steps)
+			if n <= 10:
+				for i in range(n):
+					x = margin + (usable * i // max(1, n - 1)) if n > 1 else margin
+					tick_h = round(4 * s)
+					track.create_line(x, cy - tick_h, x, cy + tick_h, fill=C["border"], width=1)
 
-			# Active knob (bigger)
+			# Active knob
 			idx = values.index(getattr(self, attr)) if getattr(self, attr) in values else 0
 			ax = margin + (usable * idx // max(1, n - 1)) if n > 1 else margin
-			r = round(8 * s)
+			r = round(7 * s)
 			track.create_oval(
 				ax - r, cy - r, ax + r, cy + r,
 				fill=C["teal"], outline=C["teal_mid"], width=round(2 * s),
@@ -1775,10 +1810,12 @@ class GlyphKitApp:
 			# Min/max labels below track
 			if labels:
 				ly = cy + round(14 * s)
-				track.create_text(margin, ly, text=labels[0],
-					fill=C["text_dim"], font=font_s, anchor="n")
-				track.create_text(tw - margin, ly, text=labels[-1],
-					fill=C["text_dim"], font=font_s, anchor="n")
+				if labels[0]:
+					track.create_text(margin, ly, text=labels[0],
+						fill=C["text_dim"], font=font_s, anchor="n")
+				if labels[-1]:
+					track.create_text(tw - margin, ly, text=labels[-1],
+						fill=C["text_dim"], font=font_s, anchor="n")
 
 		def _on_click(event):
 			tw = track.winfo_width()
