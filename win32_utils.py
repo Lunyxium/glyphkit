@@ -95,7 +95,12 @@ class MSG(ctypes.Structure):
 # === Functions ===
 
 def enable_dpi_awareness():
-	"""Enable per-monitor DPI awareness for crisp rendering."""
+	"""Enable system-level DPI awareness.
+
+	Uses level 1 (system-aware), not 2 (per-monitor) — tkinter's font
+	rendering breaks with per-monitor DPI, producing inconsistent sizes
+	across monitors. System-aware gives consistent behavior on primary.
+	"""
 	try:
 		ctypes.windll.shcore.SetProcessDpiAwareness(1)
 	except Exception:
