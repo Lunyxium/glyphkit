@@ -195,4 +195,6 @@ Python, tkinter, and the Win32 API via ctypes. Zero external dependencies, runs 
 
 ## License
 
-MIT &mdash; [Matt Baeumli](https://github.com/Lunyxium) &mdash; 2026
+GPL-3.0 &mdash; [Matt Baeumli](https://github.com/Lunyxium) &mdash; 2026
+
+This means you can use, modify, and distribute GlyphKit freely — but any derivative work must also be open source under the same license, and must credit the original author.

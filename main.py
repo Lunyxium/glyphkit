@@ -73,7 +73,7 @@ APP_INFO = {
 	"handle": "Lunyxium",
 	"github": "https://github.com/Lunyxium",
 	"year": 2026,
-	"license": "MIT",
+	"license": "GPL-3.0",
 	"hotkey": "Ctrl + Alt + G",
 }
 
