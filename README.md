@@ -191,7 +191,7 @@ Output: `dist/GlyphKit.exe` (~11 MB)
 
 Python, tkinter, and the Win32 API via ctypes. Zero external dependencies, runs entirely on Python's standard library.
 
-~1500 lines of code across 3 files. Lightweight by design.
+~2600 lines of code across 3 files. Lightweight by design.
 
 ## License
 

@@ -1367,7 +1367,12 @@ class GlyphKitApp:
 		self._fade_step(1.0, self._idle_opacity, 300, 20)
 
 	def _fade_step(self, current, target, total_ms, step_ms):
-		"""Animate opacity from current to target."""
+		"""Animate opacity from current to target with ease-out curve.
+
+		Each step moves diff/steps_left — as steps_left decreases, each
+		step covers more distance. This gives a natural ease-out: slow
+		start, accelerating toward the target.
+		"""
 		if not self._fade_animating:
 			return
 		diff = current - target
